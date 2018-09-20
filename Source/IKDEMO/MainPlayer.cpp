@@ -8,6 +8,9 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Engine/World.h"
+#include "Engine/GameEngine.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Runtime/Core/Public/Containers/Array.h"
 
 // Sets default values
 AMainPlayer::AMainPlayer()
@@ -29,23 +32,26 @@ AMainPlayer::AMainPlayer()
 
 	// Configure character movement
 	GetCharacterMovement()->bOrientRotationToMovement = true; // Character moves in the direction of input...	
-	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f); // ...at this rotation rate
-	GetCharacterMovement()->JumpZVelocity = 600.f;
+	GetCharacterMovement()->RotationRate = FRotator(0.0f, 400.0f, 0.0f); // ...at this rotation rate
+	GetCharacterMovement()->JumpZVelocity = 400.0f;
 	GetCharacterMovement()->AirControl = 0.2f;
 
 	// Create a camera boom (pulls in towards the player if there is a collision)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 300.0f; // The camera follows at this distance behind the character	
+	CameraBoom->TargetArmLength = 400.0f; // The camera follows at this distance behind the character	
 	CameraBoom->bUsePawnControlRotation = true; // Rotate the arm based on the controller
+	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 50.0f));
 
 												// Create a follow camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName); // Attach the camera to the end of the boom and let the boom adjust to match the controller orientation
 	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
 
-
-
+	ragdollEnabled = false;
+	jumpTimout = false;
+	jumpTimer = 0.0f;
+	jumpTimeToWait = 2.0f;
 }
 
 // Called when the game starts or when spawned
@@ -60,7 +66,13 @@ void AMainPlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	// Prevent player from jumping constantly.
+	if (GetWorld()->GetRealTimeSeconds() > jumpTimer + jumpTimeToWait && jumpTimout)
+	{
+		jumpTimout = false;
+	}
 }
+
 
 // Called to bind functionality to input
 void AMainPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -69,7 +81,7 @@ void AMainPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 
 	// Set up gameplay key bindings
 	check(PlayerInputComponent);
-	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &ACharacter::Jump);
+	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &AMainPlayer::Jump);
 	PlayerInputComponent->BindAction("Jump", IE_Released, this, &ACharacter::StopJumping);
 
 	PlayerInputComponent->BindAxis("MoveForward", this, &AMainPlayer::MoveForward);
@@ -79,6 +91,8 @@ void AMainPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponen
 	PlayerInputComponent->BindAxis("TurnRate", this, &AMainPlayer::TurnAtRate);
 	PlayerInputComponent->BindAxis("LookUp", this, &APawn::AddControllerPitchInput);
 	PlayerInputComponent->BindAxis("LookUpRate", this, &AMainPlayer::LookUpAtRate);
+
+	PlayerInputComponent->BindAction("Ragdoll", IE_Pressed, this, &AMainPlayer::RagdollToggle);
 }
 
 void AMainPlayer::TurnAtRate(float Rate)
@@ -102,7 +116,7 @@ void AMainPlayer::MoveForward(float Value)
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
 
 		// get forward vector
-		const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+		Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 		AddMovementInput(Direction, Value);
 	}
 }
@@ -122,4 +136,41 @@ void AMainPlayer::MoveRight(float Value)
 	}
 }
 
+void AMainPlayer::RagdollToggle()
+{
+	if (ragdollEnabled)
+	{
+		// For now nothing but put get up state here.
 
+		ragdollEnabled = false;
+	}
+	else
+	{
+		GetMesh()->SetSimulatePhysics(true);	
+		GetMesh()->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
+		GetMesh()->SetCollisionObjectType(ECollisionChannel::ECC_Pawn);
+		GetCharacterMovement()->DisableMovement();
+
+		CameraBoom->AttachToComponent(GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
+		CameraBoom->AddRelativeLocation(FVector(0.0f, 0.0f, 30.0f));
+
+		ragdollEnabled = true;
+	}
+}
+
+void AMainPlayer::Jump()
+{
+	Super::Jump();
+
+	if (!(GetCharacterMovement()->IsFalling()))
+	{
+		// Create jump direction from where the camera is positioned in relation to the player.
+		FVector directionToJump = GetCapsuleComponent()->GetComponentLocation() - FollowCamera->GetComponentLocation();
+		directionToJump.Normalize();
+		directionToJump.Z = 0.0f;
+
+		GetCharacterMovement()->AddImpulse(directionToJump * 50000.0f);
+		jumpTimer = GetWorld()->GetRealTimeSeconds() + jumpTimeToWait;
+		jumpTimout = true;
+	}
+}
