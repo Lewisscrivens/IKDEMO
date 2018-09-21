@@ -32,7 +32,10 @@ public:
 	float BaseLookUpRate;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	FVector Direction;
+	FVector lastDirectionForward;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
+	FVector lastDirectionSideward;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
 	bool ragdollEnabled;
@@ -40,11 +43,21 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
 	bool jumpTimout;
 
+	// Used in AnimBP to check what type of jump is being performed.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
+	int currentJumpType;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
 	float jumpTimeToWait;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
 	float jumpTimer;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
+	float jumpRotationSpeed;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = Debug)
+	bool debugEnabled;
 
 protected:
 	// Called when the game starts or when spawned
@@ -74,6 +87,12 @@ protected:
 	void RagdollToggle();
 
 	void Jump() override;
+
+	FVector GetDirectionToJump();
+
+	FVector CapsuleTrace();
+
+	FVector GetRootBoneLocation();
 
 public:	
 	// Called every frame
