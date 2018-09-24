@@ -20,7 +20,7 @@ AMainPlayer::AMainPlayer()
 	PrimaryActorTick.bCanEverTick = true;
 
 	// Set size for collision capsule
-	GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
+	GetCapsuleComponent()->InitCapsuleSize(20.f, 75.0f);
 
 	// set our turn rates for input
 	BaseTurnRate = 45.f;
@@ -56,6 +56,10 @@ AMainPlayer::AMainPlayer()
 	jumpRotationSpeed = 0.1f;
 
 	debugEnabled = true;
+
+	movementReleased = false;
+
+	lastValueMovement = 0.0f;
 }
 
 // Called when the game starts or when spawned
@@ -79,7 +83,7 @@ void AMainPlayer::Tick(float DeltaTime)
 	if (ragdollEnabled)
 	{
 		// Move the current focus location to 40 above the root bone to keep track of player when in ragdoll.
-		FVector rootBoneLocation = GetRootBoneLocation();
+		FVector rootBoneLocation = GetBoneLocation(FName("Base-HumanPelvis"));
 		rootBoneLocation.Z += 40.0f;// This fixes issues with the camera being stuck inside of the mesh at certain angles.
 		CameraBoom->SetWorldLocation(rootBoneLocation);
 	}
@@ -92,6 +96,21 @@ void AMainPlayer::Tick(float DeltaTime)
 	else if (GetCharacterMovement()->RotationRate.IsZero())// Dont run code if the vector is not 0.
 	{
 		GetCharacterMovement()->RotationRate = FRotator(0.0f, 400.0f, 0.0f);
+	}
+
+	if (movementReleased && InputComponent->GetAxisValue(FName("MoveForward")) == 0.0f && InputComponent->GetAxisValue(FName("MoveRight")) == 0.0f)
+	{
+		AddMovementInput(lastDirectionMovement, lastValueMovement);// Keep moving forward and ease out of movement. (Workaround)
+		GetCharacterMovement()->MaxWalkSpeed -= 1000 * DeltaTime;
+
+		if (GetCharacterMovement()->MaxWalkSpeed <= 0)
+		{
+			movementReleased = false;
+		}
+	}
+	else // Set movement back to normal.
+	{
+		GetCharacterMovement()->MaxWalkSpeed = 500.0f;
 	}
 }
 
@@ -137,9 +156,13 @@ void AMainPlayer::MoveForward(float Value)
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
 
+		lastValueMovement = Value;
+
 		// get forward vector
-		lastDirectionForward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-		AddMovementInput(lastDirectionForward, Value);
+		lastDirectionMovement = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+		AddMovementInput(lastDirectionMovement, Value);
+
+		movementReleased = true;// Initiate slow down.
 	}
 }
 
@@ -151,10 +174,14 @@ void AMainPlayer::MoveRight(float Value)
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
 
+		lastValueMovement = Value;
+
 		// get right vector 
-		lastDirectionSideward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+		lastDirectionMovement = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 		// add movement in that direction
-		AddMovementInput(lastDirectionSideward, Value);
+		AddMovementInput(lastDirectionMovement, Value);
+
+		movementReleased = true;// Initiate slow down.
 	}
 }
 
@@ -246,13 +273,11 @@ FVector AMainPlayer::CapsuleTrace()
 	//ignore the mesh when tracing from the root bone.
 	TraceParams.AddIgnoredComponent(GetMesh());
 
-	// Used to trace color in the line trace for debug.
-	FColor lineTraceColour = FColor::Red;
-	int lineTraceTimeLimit = 50; // How far the line trace will go.
+	int lineTraceLength = 50; // How far the line trace will go.
 
 	// Se the start and end distance to be from the characters root bone down along the z axis.
-	Start = GetRootBoneLocation();
-	End = Start + FVector(0.0f, 0.0f, -lineTraceTimeLimit);
+	Start = GetBoneLocation(FName("Base-HumanPelvis"));
+	End = Start + FVector(0.0f, 0.0f, -lineTraceLength);
 	// Perform a single line trace.
 	GetWorld()->LineTraceSingleByChannel(hit, Start, End, ECC_WorldStatic, TraceParams);
 
@@ -262,19 +287,22 @@ FVector AMainPlayer::CapsuleTrace()
 		FoundFloor = hit.Location;
 	}
 
+	// Used to trace color in the line trace for debug.
+	FColor lineTraceColour = FColor::Red;
+
 	// Show debug lines for line trace.
 	if (debugEnabled)
 	{
-		DrawDebugLine(GetWorld(), hit.TraceStart, hit.TraceEnd, lineTraceColour, false, lineTraceTimeLimit, 0.0f, 1.0f);
+		DrawDebugLine(GetWorld(), hit.TraceStart, hit.TraceEnd, lineTraceColour, false, lineTraceLength, 0.0f, 1.0f);
 	}
 
 	// Return the found floor location.
 	return FoundFloor;
 }
 
-FVector AMainPlayer::GetRootBoneLocation()
+FVector AMainPlayer::GetBoneLocation(FName boneName)
 {
-	return GetMesh()->GetBoneLocation(FName("Base-HumanPelvis"), EBoneSpaces::WorldSpace);
+	return GetMesh()->GetBoneLocation(boneName, EBoneSpaces::WorldSpace);
 }
 
 

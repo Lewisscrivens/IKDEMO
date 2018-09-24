@@ -32,10 +32,10 @@ public:
 	float BaseLookUpRate;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	FVector lastDirectionForward;
+	FVector lastDirectionMovement;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	FVector lastDirectionSideward;
+	float lastValueMovement;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
 	bool ragdollEnabled;
@@ -58,6 +58,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = Debug)
 	bool debugEnabled;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = Movement)
+	bool movementReleased;
 
 protected:
 	// Called when the game starts or when spawned
@@ -84,7 +87,7 @@ protected:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	void RagdollToggle();
+	
 
 	void Jump() override;
 
@@ -92,7 +95,7 @@ protected:
 
 	FVector CapsuleTrace();
 
-	FVector GetRootBoneLocation();
+	FVector GetBoneLocation(FName boneName);
 
 public:	
 	// Called every frame
@@ -102,5 +105,7 @@ public:
 	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	/** Returns FollowCamera subobject **/
 	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
-	
+
+	UFUNCTION(BlueprintCallable)
+	void RagdollToggle();
 };
