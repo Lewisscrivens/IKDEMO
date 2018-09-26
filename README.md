@@ -11,7 +11,7 @@ character so when the IK solver cannot solve the current foot placement the char
 
 ----------------------------------------------------------------------------------
 
-![logo](Images/Ragdoll.png)
+![logo](Images/Radgoll.png)
 
 ----------------------------------------------------------------------------------
 
