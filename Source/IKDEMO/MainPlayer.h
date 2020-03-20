@@ -57,6 +57,7 @@ public:
 private:
 
 	float lastDirectionScale; /* The last direction along the movement axis from player input. */
+	FVector originalOffset; /* Camera offset when rag dolling to avoid snapping movement of the camera... */
 
 public:
 

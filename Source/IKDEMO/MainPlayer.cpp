@@ -65,11 +65,10 @@ void AMainPlayer::Tick(float DeltaTime)
 	// If ragdoll is enabled update the camera boom location around the ragdoll.
 	if (ragdollEnabled)
 	{
-		// Move the current focus location to 40 above the root bone to keep track of player when in ragdoll.
-		// This fixes issues with the camera being stuck inside of the mesh at certain angles.
-		FVector rootBoneLocation = GetMesh()->GetBoneLocation("Base-HumanPelvis", EBoneSpaces::WorldSpace);
-		rootBoneLocation.Z += 40.0f;
-		CameraBoom->SetWorldLocation(rootBoneLocation);
+		// Move the camera to its location based off the base human pelvis.
+		FVector newCamLocation = GetMesh()->GetBoneLocation("Base-HumanPelvis", EBoneSpaces::WorldSpace);
+		newCamLocation -= originalOffset;
+		CameraBoom->SetWorldLocation(newCamLocation);
 	}
 
 	// When the character is in air do not allow rotation towards movement.
@@ -189,11 +188,12 @@ void AMainPlayer::RagdollToggle()
 		GetMesh()->AttachToComponent(GetCapsuleComponent(), FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
 		GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -80.0f));
 		GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
-
-
 	}
 	else
 	{
+		// Calculate camera offset to retain.
+		originalOffset = GetMesh()->GetBoneTransform(GetMesh()->GetBoneIndex("Base-HumanPelvis")).InverseTransformPositionNoScale(CameraBoom->GetComponentLocation());
+
 		// Enable ragdoll by simulating physics on the mesh and setting the new focus point for the spring arm as the root bone for the character mesh.
 		GetMesh()->SetSimulatePhysics(true);
 		GetMesh()->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
