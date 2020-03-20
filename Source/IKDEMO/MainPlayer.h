@@ -1,111 +1,108 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #pragma once
-
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "MainPlayer.generated.h"
 
+/* Declare classes used. */
+class USpringArmComponent;
+class UCameraComponent;
+class UInputComponent;
+
+/* The IK player to demo IK tech for use in a game within Unreal Engine. */
 UCLASS()
 class IKDEMO_API AMainPlayer : public ACharacter
 {
 	GENERATED_BODY()
 
-	/** Camera boom positioning the camera behind the character */
+	/* Camera boom positioning the camera behind the character */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
-	class USpringArmComponent* CameraBoom;
+	USpringArmComponent* CameraBoom;
 
-	/** Follow camera */
+	/* Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
-	class UCameraComponent* FollowCamera;
+	UCameraComponent* FollowCamera;
 
 public:
-	// Sets default values for this character's properties
-	AMainPlayer();
 
-	/** Base turn rate, in deg/sec. Other scaling may affect final turn rate. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	float BaseTurnRate;
+	/* The camera movement mouse speed. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	float mouseSpeed;
 
-	/** Base look up/down rate, in deg/sec. Other scaling may affect final rate. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	float BaseLookUpRate;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
+	/* Last inputted direction for the character movement. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
 	FVector lastDirectionMovement;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	float lastValueMovement;
+	/* The distance to check for the ground from the hips. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
+	float groundCheckDistance;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
+	/* Is ragdoll enabled? */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
 	bool ragdollEnabled;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	bool jumpTimout;
-
-	// Used in AnimBP to check what type of jump is being performed.
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	int currentJumpType;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	float jumpTimeToWait;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
-	float jumpTimer;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera)
+	/* Rotation acceleration. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
 	float jumpRotationSpeed;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = Debug)
+	/* Debug properties within the class to the log? */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
 	bool debugEnabled;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = Movement)
+	/* Is there any movement input keyboard-wise from the player? */
+	UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category = "Movement")
 	bool movementReleased;
 
-protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
+private:
 
-	/** Called for forwards/backward input */
-	void MoveForward(float Value);
+	float lastDirectionScale; /* The last direction along the movement axis from player input. */
 
-	/** Called for side to side input */
-	void MoveRight(float Value);
+public:
 
-	/**
-	* Called via input to turn at a given rate.
-	* @param Rate	This is a normalized rate, i.e. 1.0 means 100% of desired turn rate
-	*/
-	void TurnAtRate(float Rate);
+	/* Constructor. */
+	AMainPlayer();
 
-	/**
-	* Called via input to turn look up/down at a given rate.
-	* @param Rate	This is a normalized rate, i.e. 1.0 means 100% of desired turn rate
-	*/
-	void LookUpAtRate(float Rate);
-
-	// Called to bind functionality to input
-	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
-
-	
-
-	void Jump() override;
-
-	FVector GetDirectionToJump();
-
-	FVector CapsuleTrace();
-
-	FVector GetBoneLocation(FName boneName);
-
-public:	
-	// Called every frame
+	/* Frame. */
 	virtual void Tick(float DeltaTime) override;
 
-	/** Returns CameraBoom subobject **/
-	FORCEINLINE class USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
-	/** Returns FollowCamera subobject **/
-	FORCEINLINE class UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+	/* Gets the floor location and returns it in the world-axis. */
+	FVector GetFloorLocation();
 
+	/* Toggles the ragdoll on and off.
+	 * NOTE: When ragdoll is toggled off, the character is reset and repositioned as it is static... */
 	UFUNCTION(BlueprintCallable)
 	void RagdollToggle();
+
+protected:
+
+	/* Level start. */
+	virtual void BeginPlay() override;
+
+	/* Input constructor. */
+	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+
+	/* Forward movement input function. */
+	UFUNCTION(Category = "Movement")
+	void MoveForward(float value);
+
+	/* Right movement input function. */
+	UFUNCTION(Category = "Movement")
+	void MoveRight(float value);
+
+	/* The current movement from the mouse along the x axis. */
+	UFUNCTION(Category = "Movement")
+	void MouseX(float value);
+
+	/* The current movement from the mouse along the y axis. */
+	UFUNCTION(Category = "Movement")
+	void MouseY(float value);
+
+	/* Jump input function. */
+	template<bool val> void JumpAction() { JumpAction(val); }
+	UFUNCTION(Category = "Movement")
+	void JumpAction(bool pressed);
+
+	/* Jump function. */
+	void Jump() override;
 };

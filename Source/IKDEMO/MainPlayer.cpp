@@ -1,5 +1,4 @@
 // Fill out your copyright notice in the Description page of Project Settings.
-
 #include "MainPlayer.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -13,18 +12,12 @@
 #include "Runtime/Core/Public/Containers/Array.h"
 #include "DrawDebugHelpers.h"
 
-// Sets default values
 AMainPlayer::AMainPlayer()
 {
- 	// Set this character to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(20.f, 75.0f);
-
-	// set our turn rates for input
-	BaseTurnRate = 45.f;
-	BaseLookUpRate = 45.f;
 
 	// Don't rotate when the controller rotates. Let that just affect the camera.
 	bUseControllerRotationPitch = false;
@@ -32,156 +25,147 @@ AMainPlayer::AMainPlayer()
 	bUseControllerRotationRoll = false;
 
 	// Configure character movement
-	GetCharacterMovement()->bOrientRotationToMovement = true; // Character moves in the direction of input...	
-	GetCharacterMovement()->RotationRate = FRotator(0.0f, 400.0f, 0.0f); // ...at this rotation rate
+	GetCharacterMovement()->bOrientRotationToMovement = true;
+	GetCharacterMovement()->RotationRate = FRotator(0.0f, 400.0f, 0.0f);
 	GetCharacterMovement()->JumpZVelocity = 400.0f;
 	GetCharacterMovement()->AirControl = 0.2f;
 
 	// Create a camera boom (pulls in towards the player if there is a collision)
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 400.0f; // The camera follows at this distance behind the character	
-	CameraBoom->bUsePawnControlRotation = true; // Rotate the arm based on the controller
+	CameraBoom->TargetArmLength = 400.0f;
+	CameraBoom->bUsePawnControlRotation = true;
 	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 50.0f));
 
-												// Create a follow camera
+	// Create a follow camera
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
-	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName); // Attach the camera to the end of the boom and let the boom adjust to match the controller orientation
-	FollowCamera->bUsePawnControlRotation = false; // Camera does not rotate relative to arm
+	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+	FollowCamera->bUsePawnControlRotation = false;
 
+	// Setup default class variables.
+	mouseSpeed = 45.f;
 	ragdollEnabled = false;
-	jumpTimout = false;
-	jumpTimer = 0.0f;
-	jumpTimeToWait = 2.0f;
 	jumpRotationSpeed = 0.1f;
-
 	debugEnabled = true;
-
 	movementReleased = false;
-
-	lastValueMovement = 0.0f;
+	groundCheckDistance = 40.0f;
 }
 
-// Called when the game starts or when spawned
 void AMainPlayer::BeginPlay()
 {
 	Super::BeginPlay();
 
+	//....
 }
 
-// Called every frame
 void AMainPlayer::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Prevent player from jumping constantly.
-	if (GetWorld()->GetRealTimeSeconds() > jumpTimer && jumpTimout)
-	{
-		jumpTimout = false;
-	}
-
+	// If ragdoll is enabled update the camera boom location around the ragdoll.
 	if (ragdollEnabled)
 	{
 		// Move the current focus location to 40 above the root bone to keep track of player when in ragdoll.
-		FVector rootBoneLocation = GetBoneLocation(FName("Base-HumanPelvis"));
-		rootBoneLocation.Z += 40.0f;// This fixes issues with the camera being stuck inside of the mesh at certain angles.
+		// This fixes issues with the camera being stuck inside of the mesh at certain angles.
+		FVector rootBoneLocation = GetMesh()->GetBoneLocation("Base-HumanPelvis", EBoneSpaces::WorldSpace);
+		rootBoneLocation.Z += 40.0f;
 		CameraBoom->SetWorldLocation(rootBoneLocation);
 	}
 
-	// When the character is in air do not alow rotation towards movement.
+	// When the character is in air do not allow rotation towards movement.
 	if (GetCharacterMovement()->IsFalling())
 	{
 		GetCharacterMovement()->RotationRate = FRotator(0.0f, 0.0f, 0.0f);
 	}
-	else if (GetCharacterMovement()->RotationRate.IsZero())// Dont run code if the vector is not 0.
+	// Dont run code if the vector is not 0.
+	else if (GetCharacterMovement()->RotationRate.IsZero())
 	{
 		GetCharacterMovement()->RotationRate = FRotator(0.0f, 400.0f, 0.0f);
 	}
 
+	// If all movement has stopped including release delay...
 	if (movementReleased && InputComponent->GetAxisValue(FName("MoveForward")) == 0.0f && InputComponent->GetAxisValue(FName("MoveRight")) == 0.0f)
 	{
-		AddMovementInput(lastDirectionMovement, lastValueMovement);// Keep moving forward and ease out of movement. (Workaround)
+		// Keep moving forward and ease out of movement. (Workaround)
+		AddMovementInput(lastDirectionMovement, lastDirectionScale);
 		GetCharacterMovement()->MaxWalkSpeed -= 1000 * DeltaTime;
 
-		if (GetCharacterMovement()->MaxWalkSpeed <= 0)
-		{
-			movementReleased = false;
-		}
+		// End release delay when max walk speed becomes less than 0.
+		if (GetCharacterMovement()->MaxWalkSpeed <= 0) movementReleased = false;
 	}
-	else // Set movement back to normal.
-	{
-		GetCharacterMovement()->MaxWalkSpeed = 500.0f;
-	}
+	// Set movement back to normal.
+	else GetCharacterMovement()->MaxWalkSpeed = 500.0f;
 }
 
-
-// Called to bind functionality to input
 void AMainPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
-	// Set up gameplay key bindings
-	check(PlayerInputComponent);
-	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &AMainPlayer::Jump);
-	PlayerInputComponent->BindAction("Jump", IE_Released, this, &ACharacter::StopJumping);
+	// Set up action bindings.
+	PlayerInputComponent->BindAction("Jump", IE_Pressed, this, &AMainPlayer::JumpAction<true>);
+	PlayerInputComponent->BindAction("Jump", IE_Released, this, &AMainPlayer::JumpAction<false>);
+	PlayerInputComponent->BindAction("Ragdoll", IE_Pressed, this, &AMainPlayer::RagdollToggle);
 
+	// Set up axis bindings.
 	PlayerInputComponent->BindAxis("MoveForward", this, &AMainPlayer::MoveForward);
 	PlayerInputComponent->BindAxis("MoveRight", this, &AMainPlayer::MoveRight);
-
 	PlayerInputComponent->BindAxis("Turn", this, &APawn::AddControllerYawInput);
-	PlayerInputComponent->BindAxis("TurnRate", this, &AMainPlayer::TurnAtRate);
+	PlayerInputComponent->BindAxis("TurnRate", this, &AMainPlayer::MouseX);
 	PlayerInputComponent->BindAxis("LookUp", this, &APawn::AddControllerPitchInput);
-	PlayerInputComponent->BindAxis("LookUpRate", this, &AMainPlayer::LookUpAtRate);
-
-	PlayerInputComponent->BindAction("Ragdoll", IE_Pressed, this, &AMainPlayer::RagdollToggle);
+	PlayerInputComponent->BindAxis("LookUpRate", this, &AMainPlayer::MouseY);
 }
 
-void AMainPlayer::TurnAtRate(float Rate)
+void AMainPlayer::MouseX(float value)
 {
-	// calculate delta for this frame from the rate information
-	AddControllerYawInput(Rate * BaseTurnRate * GetWorld()->GetDeltaSeconds());
+	// Calculate and apply horizontal mouse movement on the camera.
+	AddControllerYawInput(value * mouseSpeed * GetWorld()->GetDeltaSeconds());
 }
 
-void AMainPlayer::LookUpAtRate(float Rate)
+void AMainPlayer::MouseY(float value)
 {
-	// calculate delta for this frame from the rate information
-	AddControllerPitchInput(Rate * BaseLookUpRate * GetWorld()->GetDeltaSeconds());
+	// Calculate and apply vertical mouse movement on the camera.
+	AddControllerPitchInput(value * mouseSpeed * GetWorld()->GetDeltaSeconds());
 }
 
-void AMainPlayer::MoveForward(float Value)
+void AMainPlayer::MoveForward(float value)
 {
-	if ((Controller != NULL) && (Value != 0.0f))
+	// If there is not a controller exit. Or if the value is 0.
+	if ((Controller != NULL) && (value != 0.0f))
 	{
-		// find out which way is forward
+		// Find out which way is forward.
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
 
-		lastValueMovement = Value;
-
-		// get forward vector
+		// Get forward vector
 		lastDirectionMovement = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-		AddMovementInput(lastDirectionMovement, Value);
+		lastDirectionScale = value;
 
-		movementReleased = true;// Initiate slow down.
+		// Add movement in that direction
+		AddMovementInput(lastDirectionMovement, value);
+
+		// Initiate slow down as soon as the value becomes 0...
+		movementReleased = true;
 	}
 }
 
-void AMainPlayer::MoveRight(float Value)
+void AMainPlayer::MoveRight(float value)
 {
-	if ((Controller != NULL) && (Value != 0.0f))
+	// If there is not a controller exit. Or if the value is 0.
+	if ((Controller != NULL) && (value != 0.0f))
 	{
-		// find out which way is right
+		// Find out which way is right.
 		const FRotator Rotation = Controller->GetControlRotation();
 		const FRotator YawRotation(0, Rotation.Yaw, 0);
 
-		lastValueMovement = Value;
-
-		// get right vector 
+		// Get right vector 
 		lastDirectionMovement = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-		// add movement in that direction
-		AddMovementInput(lastDirectionMovement, Value);
+		lastDirectionScale = value;
 
-		movementReleased = true;// Initiate slow down.
+		// Add movement in that direction
+		AddMovementInput(lastDirectionMovement, value);
+
+		// Initiate slow down as soon as the value becomes 0...
+		movementReleased = true;
 	}
 }
 
@@ -189,129 +173,102 @@ void AMainPlayer::RagdollToggle()
 {
 	if (ragdollEnabled)
 	{
-		FVector newCapsuleLocation = CapsuleTrace();// Get the new location for the capsule in relation to where the physics body currently is.
+		// Get the new location for the capsule in relation to where the physics body currently is.
+		FVector newCapsuleLocation = GetFloorLocation();
 
+		// Reset mesh back to normal as static player character.
 		GetMesh()->SetSimulatePhysics(false);
 		GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Walking);
-		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);// Prevent the capsule from effectiong world objects while not in use.
+		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 
-		// Set the new location for the capsule.
+		// Set the new location for the capsule and re-attach and position components.
 		GetCapsuleComponent()->SetWorldLocation(newCapsuleLocation + FVector(0.0f, 0.0f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
-		// Re-attatch the camera spring arm component to the capsule. 
 		CameraBoom->AttachToComponent(GetCapsuleComponent(), FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
 		CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
-		// The mesh needs reattatching to the capsule after entering ragdoll. Could be a bug with the engine version.
 		GetMesh()->AttachToComponent(GetCapsuleComponent(), FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
 		GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -80.0f));
 		GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 
-		ragdollEnabled = false;
+
 	}
 	else
 	{
 		// Enable ragdoll by simulating physics on the mesh and setting the new focus point for the spring arm as the root bone for the character mesh.
-		GetMesh()->SetSimulatePhysics(true);	
+		GetMesh()->SetSimulatePhysics(true);
 		GetMesh()->SetCollisionEnabled(ECollisionEnabled::PhysicsOnly);
 		GetMesh()->SetCollisionObjectType(ECollisionChannel::ECC_Pawn);
 		GetCharacterMovement()->DisableMovement();
-		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);// Prevent the capsule from effectiong world objects while not in use.
 
+		// Prevent the capsule from effecting world objects while not in use.
+		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		CameraBoom->AttachToComponent(GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
-
-		ragdollEnabled = true;
 	}
+
+	// Toggle ragdoll value.
+	ragdollEnabled = !ragdollEnabled;
+}
+
+
+void AMainPlayer::JumpAction(bool pressed)
+{
+	// Start and stop jumping when the jump input is pressed/released.
+	if (pressed) Jump();
+	else StopJumping();
 }
 
 void AMainPlayer::Jump()
 {
-	if (!jumpTimout)
+	Super::Jump();
+
+	// If the character is running jump forward.
+	if (!GetCharacterMovement()->IsFalling() && GetCharacterMovement()->Velocity.Size() > 0.0f)
 	{
-		Super::Jump();
+		// Create jump direction from where the camera is positioned in relation to the player.
+		FVector directionToJump = GetCapsuleComponent()->GetForwardVector();
+		directionToJump.Normalize();
+		directionToJump.Z = 0.0f;
 
-		// If the character is running jump forward.
-		if (!(GetCharacterMovement()->IsFalling()) && GetCharacterMovement()->Velocity.Size() > 0.0f)
-		{
-			GetCharacterMovement()->AddImpulse(GetDirectionToJump() * 50000.0f);
-			currentJumpType = 1;
-		}
-		else
-		{
-			currentJumpType = 0;
-		}
-
-		// Initiate the timer for when the player can next jump.
-		jumpTimer = GetWorld()->GetRealTimeSeconds() + jumpTimeToWait;
-		jumpTimout = true;
+		// Apply jump direction through force.
+		GetCharacterMovement()->AddImpulse(directionToJump * 50000.0f);
 	}
 }
 
-FVector AMainPlayer::GetDirectionToJump()
-{
-	// Create jump direction from where the camera is positioned in relation to the player.
-	FVector directionToJump = GetCapsuleComponent()->GetForwardVector();
-	directionToJump.Normalize();
-	directionToJump.Z = 0.0f;
-
-	return directionToJump;
-}
-
-// Used to find where to place the capsule when transitioning from ragdoll back to walking state. Returns the vector to place the capsule.
-FVector AMainPlayer::CapsuleTrace()
+FVector AMainPlayer::GetFloorLocation()
 {
 	// Camera offset.
 	float startDistance = 5.0f;
 
 	// Line trace variable initialization.
 	FHitResult hit;
-	FVector Start;
-	FVector End;
-	FVector FoundFloor;
-	FCollisionQueryParams TraceParams;
-	TraceParams.bTraceComplex = true;
+	FVector startLoc;
+	FVector endLoc;
+	FVector floorLoc;
+	FCollisionQueryParams traceParams;
+	traceParams.bTraceComplex = true;
 
-	//ignore the mesh when tracing from the root bone.
-	TraceParams.AddIgnoredComponent(GetMesh());
+	// Ignore the mesh when tracing from the root bone.
+	traceParams.AddIgnoredComponent(GetMesh());
 
-	int lineTraceLength = 50; // How far the line trace will go.
+	// Set the start and end distance to be from the characters root bone down along the z axis.
+	startLoc = GetMesh()->GetBoneLocation("Base-HumanPelvis", EBoneSpaces::WorldSpace);
+	endLoc = startLoc + FVector(0.0f, 0.0f, -groundCheckDistance);
 
-	// Se the start and end distance to be from the characters root bone down along the z axis.
-	Start = GetBoneLocation(FName("Base-HumanPelvis"));
-	End = Start + FVector(0.0f, 0.0f, -lineTraceLength);
 	// Perform a single line trace.
-	GetWorld()->LineTraceSingleByChannel(hit, Start, End, ECC_WorldStatic, TraceParams);
-
-	// When the line hits the floor or something else within the trace channel.
-	if (hit.bBlockingHit)
-	{
-		FoundFloor = hit.Location;
-	}
-
-	// Used to trace color in the line trace for debug.
-	FColor lineTraceColour = FColor::Red;
+	GetWorld()->LineTraceSingleByChannel(hit, startLoc, endLoc, ECC_WorldStatic, traceParams);
+	if (hit.bBlockingHit) floorLoc = hit.Location;
 
 	// Show debug lines for line trace.
 	if (debugEnabled)
 	{
-		DrawDebugLine(GetWorld(), hit.TraceStart, hit.TraceEnd, lineTraceColour, false, lineTraceLength, 0.0f, 1.0f);
+		if (hit.bBlockingHit)
+		{
+			DrawDebugLine(GetWorld(), hit.TraceStart, hit.TraceEnd, FColor::Green, false, 0.2f, 0.0f, 0.5f);
+			DrawDebugPoint(GetWorld(), hit.Location, 5.0f, FColor::Red, false, 0.2f, 0.0f);
+		}
+		else DrawDebugLine(GetWorld(), hit.TraceStart, hit.TraceEnd, FColor::Red, false, 0.2f, 0.0f, 0.5f);
 	}
 
 	// Return the found floor location.
-	return FoundFloor;
+	return floorLoc;
 }
-
-FVector AMainPlayer::GetBoneLocation(FName boneName)
-{
-	return GetMesh()->GetBoneLocation(boneName, EBoneSpaces::WorldSpace);
-}
-
-
-/* No longer needed as you can no longer dive from standing still. Was in the tick function.
-// If the character is falling. (When jumping or falling down from somewhere) rotate along the z-axis to face that direction.
-if (GetCharacterMovement()->IsFalling())
-{
-FRotator Rot = FRotationMatrix::MakeFromX(GetDirectionToJump()).Rotator();// Get lookat rotation for direction the camera is looking.
-
-GetCapsuleComponent()->AddWorldRotation(Rot * jumpRotationSpeed * DeltaTime);
-}
-*/
