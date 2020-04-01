@@ -10,6 +10,15 @@ class USpringArmComponent;
 class UCameraComponent;
 class UInputComponent;
 
+/* Enum to change what the GetFloorLocation() function does. */
+UENUM(BlueprintType)
+enum EGroundTraceType
+{
+	CAPSULE,
+	LEFT,
+	RIGHT
+};
+
 /* The IK player to demo IK tech for use in a game within Unreal Engine. */
 UCLASS()
 class IKDEMO_API AMainPlayer : public ACharacter
@@ -18,13 +27,29 @@ class IKDEMO_API AMainPlayer : public ACharacter
 
 	/* Camera boom positioning the camera behind the character */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
-	USpringArmComponent* CameraBoom;
+	USpringArmComponent* camBoom;
 
 	/* Follow camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
-	UCameraComponent* FollowCamera;
+	UCameraComponent* followCam;
+
+	/* Player Holder for default offset to the capsule... */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
+	class USceneComponent* playerHolder;
 
 public:
+
+	/* The name of the root bone. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement|IK")
+	FName rootName;
+
+	/* The name of the left foot socket. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement|IK")
+	FName leftFootSocketName;
+
+	/* The name of the right foot socket. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement|IK")
+	FName rightFootSocketName;
 
 	/* The camera movement mouse speed. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
@@ -35,8 +60,32 @@ public:
 	FVector lastDirectionMovement;
 
 	/* The distance to check for the ground from the hips. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|IK")
 	float groundCheckDistance;
+
+	/* The radius of the foot trace for detecting the floor for IK adjustments of the feet. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|IK")
+	float footTraceRadius;
+
+	/* Offset to check from the hips for either leg. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|IK")
+	float hipOffset;
+
+	/* Offset to check from the hips for either leg. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|IK")
+	float ikUpdateRate;
+
+	/* Speed to interp capsule IK offset in height. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|IK")
+	float capsuleInterpSpeed;
+
+	/* The left relative offset to trace from for the feet relative to the hips. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|IK")
+	FVector leftFootRelativeStart;
+	
+	/* The right relative offset to trace from for the feet relative to the hips. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|IK")
+	FVector rightFootRelativeStart;
 
 	/* Is ragdoll enabled? */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
@@ -57,7 +106,12 @@ public:
 private:
 
 	float lastDirectionScale; /* The last direction along the movement axis from player input. */
+	float defaultFloorDistance; /* The expected distance from the hips world Z to the ground on a flat surface. */
+	float capsuleOriginalHeight; /* The original capsule half height. */
 	FVector originalOffset; /* Camera offset when rag dolling to avoid snapping movement of the camera... */
+	FTimerHandle ikTimer; /* The timer handle for the UpdateIK function to stop the timer at runtime. */
+	bool isIKEnabled; /* Is IK currently active? */
+	
 
 public:
 
@@ -68,12 +122,24 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	/* Gets the floor location and returns it in the world-axis. */
-	FVector GetFloorLocation();
+	FVector GetFloorLocation(EGroundTraceType type = CAPSULE);
 
 	/* Toggles the ragdoll on and off.
 	 * NOTE: When ragdoll is toggled off, the character is reset and repositioned as it is static... */
 	UFUNCTION(BlueprintCallable)
 	void RagdollToggle();
+
+	/* Toggles the IK on or off depending on given bEnable value. */
+	UFUNCTION(BlueprintCallable)
+	void ToggleIK(bool bEnable);
+
+	/* IK update function. */
+	UFUNCTION(Category = "IK")
+	void UpdateIK();
+
+	/* Updates the capsule size depending on IK offset value and can also reset the capsule back to normal. */
+	UFUNCTION(BlueprintCallable, Category = "IK")
+	void UpdateCapsule(float offset = 0.0f, bool reset = false);
 
 protected:
 

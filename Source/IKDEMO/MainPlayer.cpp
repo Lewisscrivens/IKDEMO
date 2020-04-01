@@ -8,13 +8,22 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Engine/World.h"
 #include "Engine/GameEngine.h"
+#include "TimerManager.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Runtime/Core/Public/Containers/Array.h"
 #include "DrawDebugHelpers.h"
+#include "IKAnimInstance.h"
 
 AMainPlayer::AMainPlayer()
 {
 	PrimaryActorTick.bCanEverTick = true;
+
+	// Setup player attachment component.
+	playerHolder = CreateDefaultSubobject<USceneComponent>(TEXT("PlayerHolder"));
+	playerHolder->SetMobility(EComponentMobility::Movable);
+	playerHolder->SetupAttachment(GetCapsuleComponent());
+	GetMesh()->SetupAttachment(playerHolder);
+	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -70.0f));
 
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(20.f, 75.0f);
@@ -31,31 +40,49 @@ AMainPlayer::AMainPlayer()
 	GetCharacterMovement()->AirControl = 0.2f;
 
 	// Create a camera boom (pulls in towards the player if there is a collision)
-	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
-	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 400.0f;
-	CameraBoom->bUsePawnControlRotation = true;
-	CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 50.0f));
+	camBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	camBoom->SetupAttachment(RootComponent);
+	camBoom->TargetArmLength = 400.0f;
+	camBoom->bUsePawnControlRotation = true;
+	camBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 50.0f));
 
 	// Create a follow camera
-	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
-	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
-	FollowCamera->bUsePawnControlRotation = false;
+	followCam = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
+	followCam->SetupAttachment(camBoom, USpringArmComponent::SocketName);
+	followCam->bUsePawnControlRotation = false;
 
 	// Setup default class variables.
+	rootName = "Base-HumanPelvis";
+	leftFootSocketName = "Base-HumanLFootSocket";
+	rightFootSocketName = "Base-HumanRFootSocket";
 	mouseSpeed = 45.f;
 	ragdollEnabled = false;
 	jumpRotationSpeed = 0.1f;
 	debugEnabled = true;
 	movementReleased = false;
 	groundCheckDistance = 40.0f;
+	defaultFloorDistance = 0.0f;
+	hipOffset = 20.0f;
+	ikUpdateRate = 0.01f;
+	isIKEnabled = false;
+	capsuleInterpSpeed = 7.0f;
+	footTraceRadius = 5.0f;
 }
 
 void AMainPlayer::BeginPlay()
 {
 	Super::BeginPlay();
 
-	//....
+	// Setup IK update timer to be enabled by default.
+	isIKEnabled = true;
+
+	// Get default floor distance also.
+	float hipsWorldZ = GetCapsuleComponent()->GetComponentLocation().Z;
+	FVector leftFloorHit = GetFloorLocation(LEFT);
+	defaultFloorDistance = FMath::Abs(hipsWorldZ - leftFloorHit.Z);
+
+	// Save default capsule half height.
+	capsuleOriginalHeight = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
 }
 
 void AMainPlayer::Tick(float DeltaTime)
@@ -66,9 +93,9 @@ void AMainPlayer::Tick(float DeltaTime)
 	if (ragdollEnabled)
 	{
 		// Move the camera to its location based off the base human pelvis.
-		FVector newCamLocation = GetMesh()->GetBoneLocation("Base-HumanPelvis", EBoneSpaces::WorldSpace);
+		FVector newCamLocation = GetMesh()->GetBoneLocation(rootName, EBoneSpaces::WorldSpace);
 		newCamLocation -= originalOffset;
-		CameraBoom->SetWorldLocation(newCamLocation);
+		camBoom->SetWorldLocation(newCamLocation);
 	}
 
 	// When the character is in air do not allow rotation towards movement.
@@ -82,8 +109,11 @@ void AMainPlayer::Tick(float DeltaTime)
 		GetCharacterMovement()->RotationRate = FRotator(0.0f, 400.0f, 0.0f);
 	}
 
+	// Get is moving.
+	bool isMoving = InputComponent->GetAxisValue(FName("MoveForward")) != 0.0f || InputComponent->GetAxisValue(FName("MoveRight")) != 0.0f;
+
 	// If all movement has stopped including release delay...
-	if (movementReleased && InputComponent->GetAxisValue(FName("MoveForward")) == 0.0f && InputComponent->GetAxisValue(FName("MoveRight")) == 0.0f)
+	if (movementReleased && !isMoving)
 	{
 		// Keep moving forward and ease out of movement. (Workaround)
 		AddMovementInput(lastDirectionMovement, lastDirectionScale);
@@ -94,6 +124,9 @@ void AMainPlayer::Tick(float DeltaTime)
 	}
 	// Set movement back to normal.
 	else GetCharacterMovement()->MaxWalkSpeed = 500.0f;
+
+	// If IK is enabled update it.
+	if (isIKEnabled && !GetCharacterMovement()->IsFalling() && !isMoving) UpdateIK();
 }
 
 void AMainPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -183,8 +216,8 @@ void AMainPlayer::RagdollToggle()
 
 		// Set the new location for the capsule and re-attach and position components.
 		GetCapsuleComponent()->SetWorldLocation(newCapsuleLocation + FVector(0.0f, 0.0f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
-		CameraBoom->AttachToComponent(GetCapsuleComponent(), FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
-		CameraBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
+		camBoom->AttachToComponent(GetCapsuleComponent(), FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
+		camBoom->SetRelativeLocation(FVector(0.0f, 0.0f, 0.0f));
 		GetMesh()->AttachToComponent(GetCapsuleComponent(), FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
 		GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -80.0f));
 		GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
@@ -192,7 +225,7 @@ void AMainPlayer::RagdollToggle()
 	else
 	{
 		// Calculate camera offset to retain.
-		originalOffset = GetMesh()->GetBoneTransform(GetMesh()->GetBoneIndex("Base-HumanPelvis")).InverseTransformPositionNoScale(CameraBoom->GetComponentLocation());
+		originalOffset = GetMesh()->GetBoneTransform(GetMesh()->GetBoneIndex(rootName)).InverseTransformPositionNoScale(camBoom->GetComponentLocation());
 
 		// Enable ragdoll by simulating physics on the mesh and setting the new focus point for the spring arm as the root bone for the character mesh.
 		GetMesh()->SetSimulatePhysics(true);
@@ -202,13 +235,76 @@ void AMainPlayer::RagdollToggle()
 
 		// Prevent the capsule from effecting world objects while not in use.
 		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		CameraBoom->AttachToComponent(GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
+		camBoom->AttachToComponent(GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, NAME_None);
 	}
 
 	// Toggle ragdoll value.
 	ragdollEnabled = !ragdollEnabled;
 }
 
+void AMainPlayer::ToggleIK(bool bEnable)
+{
+	isIKEnabled = bEnable;
+}
+
+void AMainPlayer::UpdateIK()
+{
+	// Obtain the current foot offset in the Z direction for the left foot.
+	FVector leftFloorHit = GetFloorLocation(LEFT);
+	FVector rightFloorHit = GetFloorLocation(RIGHT);
+	if ((leftFloorHit == FVector::ZeroVector || rightFloorHit == FVector::ZeroVector) && !ragdollEnabled)
+	{
+		// Toggle ragdoll and reset IK.
+		RagdollToggle();
+		if (UIKAnimInstance* IKAnim = Cast<UIKAnimInstance>(GetMesh()->GetAnimInstance()))
+		{
+			IKAnim->currentLeftFootLocation = FVector::ZeroVector;
+			IKAnim->currentRightFootLocation = FVector::ZeroVector;
+			IKAnim->currentHipOffset = 0.0f;
+		}
+		return;
+	}
+	
+	// Get the IK offset values.
+	FVector currLeftOffset = leftFloorHit;
+	FVector currRightOffset = rightFloorHit;
+	float bottomOfCapsuleZ = GetCapsuleComponent()->GetComponentLocation().Z - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	float currHipOffset = currLeftOffset.Z < currRightOffset.Z ? FMath::Abs((FMath::Abs(currLeftOffset.Z) - FMath::Abs(bottomOfCapsuleZ))) * -1
+															   : FMath::Abs((FMath::Abs(currRightOffset.Z) - FMath::Abs(bottomOfCapsuleZ))) * -1;
+
+	// Update Capsule.
+	UpdateCapsule(currHipOffset);
+
+	// Create the correct offsets in the anim instance.
+	if (UIKAnimInstance* IKAnim = Cast<UIKAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		IKAnim->currentHipOffset = currHipOffset;
+		IKAnim->currentLeftFootLocation = currLeftOffset;
+		IKAnim->currentRightFootLocation = currRightOffset;
+	}
+}
+
+void AMainPlayer::UpdateCapsule(float offset, bool reset)
+{
+	// Get new half height.
+	float newHeight = 0.0f;
+	if (reset) newHeight = capsuleOriginalHeight;
+	else newHeight = capsuleOriginalHeight - (FMath::Abs(offset) / 2);
+
+	// Interpolate the value as long as this function is being ran.
+	float currentCapsuleHeight = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+	float interpingValue = FMath::FInterpTo(currentCapsuleHeight, newHeight, GetWorld()->GetDeltaSeconds(), capsuleInterpSpeed);
+
+	// Setup new capsule height.
+	UCapsuleComponent* cap = GetCapsuleComponent();
+	cap->SetCapsuleHalfHeight(interpingValue, true);
+
+	// If debug is enabled draw the capsule.
+	if (debugEnabled)
+	{
+		DrawDebugCapsule(GetWorld(), cap->GetComponentLocation(), cap->GetScaledCapsuleHalfHeight(), cap->GetScaledCapsuleRadius(), FQuat::Identity, FColor::Blue, false, 0.02f, 0.0f, 1.0f);
+	}
+}
 
 void AMainPlayer::JumpAction(bool pressed)
 {
@@ -234,28 +330,43 @@ void AMainPlayer::Jump()
 	}
 }
 
-FVector AMainPlayer::GetFloorLocation()
+FVector AMainPlayer::GetFloorLocation(EGroundTraceType traceType)
 {
 	// Camera offset.
 	float startDistance = 5.0f;
 
 	// Line trace variable initialization.
 	FHitResult hit;
-	FVector startLoc;
-	FVector endLoc;
-	FVector floorLoc;
+	FVector startLoc = FVector::ZeroVector;
+	FVector endLoc = FVector::ZeroVector;
+	FVector floorLoc = FVector::ZeroVector;
 	FCollisionQueryParams traceParams;
 	traceParams.bTraceComplex = true;
 
-	// Ignore the mesh when tracing from the root bone.
-	traceParams.AddIgnoredComponent(GetMesh());
+	// Ignore this actor.
+	traceParams.AddIgnoredActor(this);
 
-	// Set the start and end distance to be from the characters root bone down along the z axis.
-	startLoc = GetMesh()->GetBoneLocation("Base-HumanPelvis", EBoneSpaces::WorldSpace);
-	endLoc = startLoc + FVector(0.0f, 0.0f, -groundCheckDistance);
+	// Set the start of the trace depending on trace type.
+	FTransform hipsTransform = GetCapsuleComponent()->GetComponentTransform();
+	switch (traceType)
+	{
+	case CAPSULE:
+		startLoc = GetMesh()->GetBoneLocation(rootName, EBoneSpaces::WorldSpace);
+	break;
+	case LEFT:
+		startLoc = hipsTransform.TransformPositionNoScale(leftFootRelativeStart);
+	break;
+	case RIGHT:
+		startLoc = hipsTransform.TransformPositionNoScale(rightFootRelativeStart);
+	break;
+	}
+	
+	// Set the end of the trace to be the ground check distance down in the world.
+	endLoc = startLoc;
+	endLoc.Z -= groundCheckDistance;
 
 	// Perform a single line trace.
-	GetWorld()->LineTraceSingleByChannel(hit, startLoc, endLoc, ECC_WorldStatic, traceParams);
+	GetWorld()->SweepSingleByChannel(hit, startLoc, endLoc, FQuat::Identity, ECC_WorldStatic, FCollisionShape::MakeSphere(footTraceRadius), traceParams);
 	if (hit.bBlockingHit) floorLoc = hit.Location;
 
 	// Show debug lines for line trace.
