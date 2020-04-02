@@ -111,7 +111,7 @@ private:
 	FVector originalOffset; /* Camera offset when rag dolling to avoid snapping movement of the camera... */
 	FTimerHandle ikTimer; /* The timer handle for the UpdateIK function to stop the timer at runtime. */
 	bool isIKEnabled; /* Is IK currently active? */
-	
+	FVector leftRelativeFoot, rightRelativeFoot; /* The default relative foot offset in the world to use while IK is not being updated... */
 
 public:
 

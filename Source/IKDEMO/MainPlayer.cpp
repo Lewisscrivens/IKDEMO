@@ -81,6 +81,12 @@ void AMainPlayer::BeginPlay()
 	FVector leftFloorHit = GetFloorLocation(LEFT);
 	defaultFloorDistance = FMath::Abs(hipsWorldZ - leftFloorHit.Z);
 
+	// Get default relative offsets.
+	FVector rightFloorHit = GetFloorLocation(RIGHT);
+	FTransform capTrans = GetCapsuleComponent()->GetComponentTransform();
+	leftRelativeFoot = capTrans.InverseTransformPositionNoScale(leftFloorHit);
+	rightRelativeFoot = capTrans.InverseTransformPositionNoScale(rightFloorHit);
+
 	// Save default capsule half height.
 	capsuleOriginalHeight = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
 }
@@ -127,6 +133,21 @@ void AMainPlayer::Tick(float DeltaTime)
 
 	// If IK is enabled update it.
 	if (isIKEnabled && !GetCharacterMovement()->IsFalling() && !isMoving) UpdateIK();
+	// Otherwise update default values.
+	else
+	{
+		// Get default positions for the left and right foot without any line traces in the world space.
+		FTransform capTrans = GetCapsuleComponent()->GetComponentTransform();
+		FVector currentLeftFoot = capTrans.TransformPositionNoScale(leftRelativeFoot);
+		FVector currentRightFoot = capTrans.TransformPositionNoScale(rightRelativeFoot);
+
+		// Update IKAnim.
+		if (UIKAnimInstance* IKAnim = Cast<UIKAnimInstance>(GetMesh()->GetAnimInstance()))
+		{
+			IKAnim->currentLeftFootLocation = currentLeftFoot;
+			IKAnim->currentRightFootLocation = currentRightFoot;
+		}
+	}
 }
 
 void AMainPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
