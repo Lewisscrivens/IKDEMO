@@ -1,4 +1,4 @@
-# IKDEMO
+# Inverse Kinematics in Unreal Engine 4
 
 A simplistic demo representing alternative animation methods for the foot placement in UE4.23.
 This is done by having IK foot placement (Not currently fully working just a test demo) and a physics body on the
