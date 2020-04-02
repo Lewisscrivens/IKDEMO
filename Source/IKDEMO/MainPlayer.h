@@ -133,6 +133,10 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void ToggleIK(bool bEnable);
 
+	/* Update function to give the feet a default position. */
+	UFUNCTION(Category = "IK")
+	void UpdateDefaultFeetPosition();
+
 	/* IK update function. */
 	UFUNCTION(Category = "IK")
 	void UpdateIK();

@@ -89,6 +89,9 @@ void AMainPlayer::BeginPlay()
 
 	// Save default capsule half height.
 	capsuleOriginalHeight = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+
+	// Setup default feet positioning.
+	UpdateDefaultFeetPosition();
 }
 
 void AMainPlayer::Tick(float DeltaTime)
@@ -134,20 +137,7 @@ void AMainPlayer::Tick(float DeltaTime)
 	// If IK is enabled update it.
 	if (isIKEnabled && !GetCharacterMovement()->IsFalling() && !isMoving) UpdateIK();
 	// Otherwise update default values.
-	else
-	{
-		// Get default positions for the left and right foot without any line traces in the world space.
-		FTransform capTrans = GetCapsuleComponent()->GetComponentTransform();
-		FVector currentLeftFoot = capTrans.TransformPositionNoScale(leftRelativeFoot);
-		FVector currentRightFoot = capTrans.TransformPositionNoScale(rightRelativeFoot);
-
-		// Update IKAnim.
-		if (UIKAnimInstance* IKAnim = Cast<UIKAnimInstance>(GetMesh()->GetAnimInstance()))
-		{
-			IKAnim->currentLeftFootLocation = currentLeftFoot;
-			IKAnim->currentRightFootLocation = currentRightFoot;
-		}
-	}
+	else UpdateDefaultFeetPosition();
 }
 
 void AMainPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -268,6 +258,22 @@ void AMainPlayer::ToggleIK(bool bEnable)
 	isIKEnabled = bEnable;
 }
 
+void AMainPlayer::UpdateDefaultFeetPosition()
+{
+	// Get default positions for the left and right foot without any line traces in the world space.
+	FTransform capTrans = GetCapsuleComponent()->GetComponentTransform();
+	FVector currentLeftFoot = capTrans.TransformPositionNoScale(leftRelativeFoot);
+	FVector currentRightFoot = capTrans.TransformPositionNoScale(rightRelativeFoot);
+
+	// Update IKAnim.
+	if (UIKAnimInstance* IKAnim = Cast<UIKAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		IKAnim->currentHipOffset = 0.0f;
+		IKAnim->currentLeftFootLocation = currentLeftFoot;
+		IKAnim->currentRightFootLocation = currentRightFoot;
+	}
+}
+
 void AMainPlayer::UpdateIK()
 {
 	// Obtain the current foot offset in the Z direction for the left foot.
@@ -277,12 +283,7 @@ void AMainPlayer::UpdateIK()
 	{
 		// Toggle ragdoll and reset IK.
 		RagdollToggle();
-		if (UIKAnimInstance* IKAnim = Cast<UIKAnimInstance>(GetMesh()->GetAnimInstance()))
-		{
-			IKAnim->currentLeftFootLocation = FVector::ZeroVector;
-			IKAnim->currentRightFootLocation = FVector::ZeroVector;
-			IKAnim->currentHipOffset = 0.0f;
-		}
+		UpdateDefaultFeetPosition();
 		return;
 	}
 	
