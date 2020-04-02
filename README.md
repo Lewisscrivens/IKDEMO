@@ -16,6 +16,10 @@ Known issues:
 
 - After jumping there is a frame where the feet dont know where to position themselves. I have left this as I need to move onto other projects and was only updating this to code...
 
+You can find a build of this small demo here:
+
+https://drive.google.com/file/d/14vGqj0MPAZaYXFmb0PwqZV29ChdOV1rA/view?usp=sharing
+
 NOTE: This is by no means a finished project just got the IK working enough to add to a proposal presentation for canalside studios.
 
 ----------------------------------------------------------------------------------
@@ -24,5 +28,4 @@ NOTE: This is by no means a finished project just got the IK working enough to a
 
 ----------------------------------------------------------------------------------
 
-![logo](Images/Examples.png)
-
+[![logo](Images/Examples.png)](https://youtu.be/m02yRjtS3gk)
